@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bike-EKG_Web</title>
+  <link rel="stylesheet" href="styles.css?v=0.1.8">
+  <!-- Klassische defer-Skripte laufen in dieser Reihenfolge nach dem DOM-Aufbau.
+       Daten-/Protokollmodule müssen vor ihren UI-Verbrauchern geladen werden. -->
+  <script src="preview.js?v=0.1.8" defer></script>
+  <script src="files.js?v=0.1.8" defer></script>
+  <script src="monitor.js?v=0.1.8" defer></script>
+  <script src="tabs.js?v=0.1.8" defer></script>
+  <script src="visualization-data.js?v=0.1.8" defer></script>
+  <script src="visualization-report.js?v=0.1.8" defer></script>
+  <script src="visualization-stream.js?v=0.1.8" defer></script>
+  <script src="visualization-filters.js?v=0.1.8" defer></script>
+  <script src="visualization.js?v=0.1.8" defer></script>
+</head>
+<body>
+  <dialog id="compatibility-dialog" class="compatibility-dialog" role="alertdialog" aria-labelledby="compatibility-dialog-title" aria-describedby="compatibility-dialog-message compatibility-dialog-local">
+    <div class="compatibility-dialog-icon" aria-hidden="true">!</div>
+    <h2 id="compatibility-dialog-title">Bluetooth-Verbindung nicht verfügbar</h2>
+    <p id="compatibility-dialog-message"></p>
+    <p id="compatibility-dialog-local">Ohne Web Bluetooth sind Gerätesteuerung und SD-Übertragung nicht möglich. Bereits vorhandene CSV- und Bike-EKG-BIN-Dateien können Sie unter „Daten Visualisieren“ weiterhin lokal ansehen.</p>
+    <form method="dialog"><button id="compatibility-dialog-close" type="submit" autofocus>Verstanden</button></form>
+  </dialog>
+  <main>
+    <header>
+      <h1>Bike-EKG_Web</h1>
+      <div class="app-tabs" role="tablist" aria-label="Anwendungsbereiche">
+        <button id="monitor-tab" class="app-tab" type="button" role="tab" aria-selected="true" aria-controls="monitor-view" tabindex="0">EKG-Messystem</button>
+        <button id="visualization-tab" class="app-tab" type="button" role="tab" aria-selected="false" aria-controls="visualization-view" tabindex="-1">Daten Visualisieren</button>
+      </div>
+    </header>
+
+    <div id="monitor-view" role="tabpanel" aria-labelledby="monitor-tab">
+      <p class="view-description">Bedienkonsole zur Konfiguration und Steuerung des Messsystems über Bluetooth Low Energy.</p>
+
+    <div id="compatibility" class="notice" role="alert" hidden></div>
+    <div id="browser-setup" class="browser-setup" hidden>
+      <label for="flags-address">Browser-Einstellung</label>
+      <div class="command-row">
+        <input id="flags-address" type="text" value="chrome://flags/#enable-experimental-web-platform-features" readonly>
+        <button id="copy-flags" type="button" class="secondary">Adresse kopieren</button>
+      </div>
+      <p id="copy-result" class="hint" role="status">In einem neuen Tab in die Adresszeile einfügen. Interne Browserseiten können nicht direkt aus einer Webseite geöffnet werden.</p>
+    </div>
+
+    <section aria-labelledby="connection-title">
+      <div class="section-heading">
+        <h2 id="connection-title">Verbindung</h2>
+        <span id="connection-state" class="badge" role="status">Nicht verbunden</span>
+      </div>
+      <p id="device-info">Messsystem einschalten und über „Verbinden“ das Gerät Bike-EKG auswählen.</p>
+      <div class="actions">
+        <button id="connect" type="button">Verbinden</button>
+        <button id="disconnect" type="button" class="secondary" disabled>Trennen</button>
+      </div>
+      <details class="connection-options">
+        <summary>Verbindungsoptionen</summary>
+        <div class="options">
+          <label><input id="sync-time" type="checkbox" checked> Gerätezeit mit Rechnerzeit synchronisieren</label>
+          <label><input id="auto-reconnect" type="checkbox" checked> Automatisch wiederverbinden (max. 5 Versuche)</label>
+        </div>
+      </details>
+    </section>
+
+    <!-- Gerätesteuerung erst bei Verbindung freigeben; monitor.js hält Status/Sperren. -->
+    <section id="device-controls" aria-labelledby="commands-title" hidden>
+      <div class="section-heading">
+        <h2 id="commands-title">Gerätesteuerung</h2>
+        <button id="refresh-config" type="button" class="secondary" disabled>Konfiguration neu laden</button>
+      </div>
+      <p id="config-status" class="hint" role="status">Konfiguration wird geladen …</p>
+      <form id="config-form">
+        <fieldset id="config-fields" disabled>
+          <div class="config-grid">
+            <label for="setting-rate">Abtastrate
+              <select id="setting-rate"><option value="125">125 Samples/s</option><option value="250">250 Samples/s</option><option value="500">500 Samples/s</option></select>
+            </label>
+            <label for="setting-gain">Verstärkung
+              <select id="setting-gain"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="4">4×</option><option value="6">6×</option><option value="8">8×</option><option value="12">12×</option></select>
+            </label>
+            <label for="setting-input">Eingang
+              <select id="setting-input"><option value="normal">Messeingang</option><option value="short">Intern kurzgeschlossen</option><option value="test">Internes Testsignal</option></select>
+            </label>
+            <label for="setting-duration">Aufzeichnungsdauer (s)
+              <input id="setting-duration" type="number" min="1" max="4200" step="1" required>
+            </label>
+            <label for="setting-rld" class="config-switch-field">Right-Leg-Drive (RLD)
+              <input id="setting-rld" class="config-switch" type="checkbox" role="switch" aria-describedby="rld-safety">
+              <span id="rld-safety" class="hint">Nur für elektrisch isolierte Prüfaufbauten.</span>
+            </label>
+          </div>
+          <div class="config-filter" role="group" aria-label="Digitaler Filter für Vorschau">
+            <div class="config-grid">
+              <label for="setting-filter" class="config-filter-toggle config-switch-field">Digitaler Filter für Vorschau
+                <input id="setting-filter" class="config-switch" type="checkbox" role="switch">
+              </label>
+              <label for="setting-low">Untere Filtergrenze (Hz)
+                <input id="setting-low" type="number" min="0.001" max="65.534" step="0.001" required>
+              </label>
+              <label for="setting-high">Obere Filtergrenze (Hz)
+                <input id="setting-high" type="number" min="0.002" max="65.535" step="0.001" required>
+              </label>
+            </div>
+          </div>
+        </fieldset>
+        <div class="config-footer">
+          <button id="reset-config" type="button" class="secondary" data-command="config reset" disabled>Konfiguration zurücksetzen</button>
+          <button id="apply-config" type="submit" disabled>Änderungen übernehmen</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Live-Vorschau ist ein begrenzter Verlauf, keine persistente Aufzeichnung. -->
+    <section id="preview-panel" aria-labelledby="preview-title" hidden>
+      <div class="section-heading">
+        <h2 id="preview-title">Signalvorschau</h2>
+        <div class="actions">
+          <button id="preview-start" type="button" disabled>Vorschau starten</button>
+          <button id="preview-stop" class="secondary" type="button" disabled>Stoppen</button>
+        </div>
+      </div>
+      <label class="preview-window" for="preview-keep-seconds">Zeitfenster
+        <select id="preview-keep-seconds">
+          <option value="5">5 Sekunden</option>
+          <option value="10" selected>10 Sekunden</option>
+          <option value="20">20 Sekunden</option>
+          <option value="30">30 Sekunden</option>
+          <option value="60">60 Sekunden</option>
+        </select>
+      </label>
+      <p id="preview-state" class="hint" role="status">Signalvorschau · Während der SD-Aufzeichnung deaktiviert.</p>
+      <canvas id="preview-canvas" aria-label="Signalverlauf der letzten zehn Sekunden, ADC-Werte" role="img"></canvas>
+      <div class="preview-counters">
+        <span>Empfangen: <strong id="preview-received">0</strong></span>
+        <span id="preview-loss">Fehlende Samples: <strong id="preview-missing">0</strong></span>
+      </div>
+      <details class="preview-statistics">
+        <summary>Übertragungsstatistik</summary>
+        <p class="hint">Zähler seit Vorschau-Start. Fehlende Werte erscheinen als Lücken, nicht als interpolierte Kurve.</p>
+        <dl>
+          <div><dt>Verluste bei der Erfassung (MCU)</dt><dd id="preview-acquisition">0</dd></div>
+          <div><dt>In der BLE-Sendewarteschlange verworfen</dt><dd id="preview-tx-dropped">0</dd></div>
+          <div><dt>Erkannte Paketlücken</dt><dd id="preview-packet-gaps">0</dd></div>
+          <div><dt>Ungültige Pakete</dt><dd id="preview-invalid">0</dd></div>
+        </dl>
+      </details>
+    </section>
+
+    <section id="recording-panel" aria-labelledby="recording-title" hidden>
+      <div class="section-heading">
+        <h2 id="recording-title">SD-Aufzeichnung</h2>
+      </div>
+      <fieldset id="recording-metadata" class="recording-metadata" aria-describedby="recording-metadata-note" disabled>
+        <legend class="visually-hidden">Angaben zur Aufzeichnung</legend>
+        <label for="recording-participant">Versuchsperson
+          <input id="recording-participant" type="text" placeholder="Kürzel oder Teilnehmer-ID" autocomplete="off" aria-describedby="recording-participant-count">
+          <span id="recording-participant-count" class="hint">0 / 80 UTF-8-Bytes</span>
+        </label>
+        <label for="recording-comment">Kommentar
+          <textarea id="recording-comment" rows="3" placeholder="Zum Beispiel Versuchsbedingungen oder Besonderheiten" aria-describedby="recording-comment-count"></textarea>
+          <span id="recording-comment-count" class="hint">0 / 376 UTF-8-Bytes</span>
+        </label>
+      </fieldset>
+      <p id="recording-metadata-note" class="hint" role="status">Angaben werden beim Start auf dem Gerät im Dateiheader gespeichert. Beide Felder sind optional.</p>
+      <div class="actions">
+        <button type="button" data-command="start" disabled>Aufzeichnung starten</button>
+        <button type="button" class="secondary" data-command="stop" disabled>Stoppen</button>
+      </div>
+      <div id="recording-progress" class="recording-progress" hidden>
+        <div class="progress-heading">
+          <span id="recording-label">Aufzeichnung läuft</span>
+          <span id="recording-percent">0 %</span>
+        </div>
+        <progress id="recording-bar" max="100" value="0" aria-label="Geschätzter Aufzeichnungsfortschritt"></progress>
+        <div class="progress-times hint">
+          <span id="recording-elapsed">00:00 verstrichen</span>
+          <span id="recording-remaining">Restzeit wird berechnet</span>
+        </div>
+        <p class="hint">Zeitbasierte Schätzung, keine Bestätigung gespeicherter Messdaten.</p>
+      </div>
+      <div id="recording-result" class="measurement-actions" hidden>
+        <p id="recording-result-info" class="hint"></p>
+        <button id="recording-visualize" type="button" disabled>Messung visualisieren</button>
+      </div>
+    </section>
+
+    <section id="sd-panel" aria-labelledby="sd-title" hidden>
+      <div class="section-heading">
+        <h2 id="sd-title">Aufzeichnungen auf SD-Karte</h2>
+        <div class="actions">
+          <button id="sd-refresh" class="secondary" type="button" disabled>Dateiliste laden</button>
+          <button id="sd-cancel" class="secondary" type="button" hidden>Abbrechen</button>
+        </div>
+      </div>
+      <p id="sd-status" class="hint" role="status">Dateiliste im Leerlauf laden und Aufzeichnungen als CSV herunterladen.</p>
+      <ul id="sd-files" class="sd-files" aria-label="Aufzeichnungen auf der SD-Karte" tabindex="0"></ul>
+      <div id="sd-progress" class="sd-progress" hidden>
+        <progress id="sd-progress-bar" max="100" value="0" aria-label="Dateiübertragungsfortschritt"></progress>
+        <p id="sd-progress-text" class="hint"></p>
+      </div>
+      <p class="hint">CSV mit Messinformationen und ungefilterten Rohdaten. SD-Dateien werden nicht verändert. Während Vorschau und Messung ist der Zugriff gesperrt.</p>
+    </section>
+
+    <section id="console-panel" aria-labelledby="console-title" hidden>
+      <div class="section-heading">
+        <h2 id="console-title">Konsole</h2>
+        <div class="actions">
+          <button id="save-log" class="secondary" type="button">Ausgabe speichern</button>
+          <button id="clear-log" class="secondary" type="button">Ausgabe löschen</button>
+        </div>
+      </div>
+      <pre id="console" tabindex="0" aria-label="Konsolenausgabe"></pre>
+      <form id="command-form">
+        <label for="command">Befehl</label>
+        <div class="command-row">
+          <input id="command" name="command" type="text" placeholder="z. B. help" maxlength="63"
+                 autocomplete="off" spellcheck="false" disabled>
+          <button id="send" type="submit" disabled>Senden</button>
+        </div>
+      </form>
+      <p class="hint">Enter: senden · ↑/↓: Befehlsverlauf. Die Ausführung wird durch die Geräteantwort bestätigt.</p>
+    </section>
+
+    <section aria-label="Dokumentation">
+      <details>
+        <summary>Befehlsreferenz</summary>
+        <p>Jeden Befehl einzeln eingeben. Angaben in <code>&lt;…&gt;</code> durch einen Wert ersetzen;
+          <code>|</code> trennt die zulässigen Alternativen.</p>
+        <p>Konfiguration und Messstart sind nur im Betriebszustand <code>idle</code> verfügbar.
+          Geänderte Einstellungen gelten ab dem nächsten Messstart.</p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Befehl</th><th>Funktion</th></tr></thead>
+            <tbody>
+              <tr><td><code>help</code></td><td>Verfügbare Firmwarebefehle auflisten.</td></tr>
+              <tr><td><code>state</code></td><td>Aktuellen Betriebszustand anzeigen.</td></tr>
+              <tr><td><code>status</code></td><td>Statusinformationen zum aktuellen Betrieb anzeigen.</td></tr>
+              <tr><td><code>time &lt;unix_seconds&gt;</code></td><td>Gerätezeit setzen (optional automatisch beim Verbinden).</td></tr>
+              <tr><td><code>config</code> / <code>config reset</code></td><td>Einstellungen anzeigen / auf Standard zurücksetzen.</td></tr>
+              <tr><td><code>gain &lt;1|2|3|4|6|8|12&gt;</code></td><td>ADS1291-Verstärkung einstellen.</td></tr>
+              <tr><td><code>rate &lt;125|250|500&gt;</code></td><td>Abtastrate in Samples pro Sekunde einstellen.</td></tr>
+              <tr><td><code>input &lt;normal|short|test&gt;</code></td><td>Messeingang, kurzgeschlossene Eingänge oder internes Testsignal.</td></tr>
+              <tr><td><code>rld &lt;on|off&gt;</code></td><td>Right-Leg-Drive; nur für elektrisch isolierte Prüfaufbauten. Nicht dauerhaft gespeichert.</td></tr>
+              <tr><td><code>test_duration &lt;seconds&gt;</code></td><td>Dauer der SD-Aufzeichnung bis zum automatischen Stopp.</td></tr>
+              <tr><td><code>filter &lt;on|off&gt;</code></td><td>MCU-Bandpass für USB-Streaming und BLE-Vorschau aktivieren/deaktivieren. Nicht dauerhaft gespeichert.</td></tr>
+              <tr><td><code>filter band &lt;low_hz&gt; &lt;high_hz&gt;</code></td><td>Filterband setzen, z. B. <code>filter band 0.5 40</code>. Dezimalpunkt verwenden.</td></tr>
+              <tr><td><code>start</code> / <code>stop</code></td><td>SD-Aufzeichnung starten / vorzeitig beenden.</td></tr>
+              <tr><td><code>stream start</code> / <code>stream stop</code></td><td>Messwertausgabe über USB-Serial, <strong>nicht über diese BLE-Konsole</strong>.</td></tr>
+              <tr><td><code>display start</code></td><td>Erfordert <code>rate 250</code>. Wechselt zum Display-BLE-Dienst und trennt die Debugverbindung.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Im Displaymodus verarbeitet die Firmware keine Konsolenbefehle.
+          Zur Rückkehr in den Konsolenbetrieb das Gerät neu starten.</p>
+      </details>
+      <details>
+        <summary>Bedienhinweise</summary>
+        <ul>
+          <li>„Gesendet“ bestätigt die Übertragung, nicht die Ausführung. Maßgeblich ist die Antwort der Firmware.</li>
+          <li>Die Konsole enthält die letzten 100.000 Zeichen. „Ausgabe speichern“ exportiert diesen Puffer als Textdatei.</li>
+          <li>Beim Neuladen der Seite gehen Konsolenausgabe und Befehlsverlauf verloren.</li>
+          <li>Den Tab während des Betriebs geöffnet lassen. Hintergrundbetrieb und Energiesparmodus können die Verbindung beeinträchtigen.</li>
+          <li>Die Signalvorschau dient zur Sichtprüfung des Signals, nicht zur medizinischen Auswertung.</li>
+        </ul>
+      </details>
+      <details>
+        <summary>Browser und Verbindung</summary>
+        <p>Unterstützt werden Chrome/Edge unter Windows und macOS sowie Chrome unter Android.
+          Unter Linux kann eine zusätzliche Freischaltung von Web Bluetooth erforderlich sein.
+          Firefox und Safari werden nicht unterstützt.</p>
+        <p>Web Bluetooth erfordert einen sicheren Kontext, üblicherweise HTTPS oder localhost.
+          Hinweise zur lokalen Bereitstellung stehen in der <a href="README.md">README</a>.</p>
+        <p>Die Kommunikation erfolgt lokal über den Nordic UART Service (NUS).
+          Die Anwendung überträgt keine Konsolendaten an einen Server und lädt keine externen Bibliotheken.</p>
+      </details>
+    </section>
+
+    </div>
+
+    <div id="visualization-view" role="tabpanel" aria-labelledby="visualization-tab" tabindex="0" hidden>
+      <section aria-labelledby="visualization-title">
+        <h2 id="visualization-title">CSV-/BIN-Dateien ansehen</h2>
+        <p>Bike-EKG-CSV oder BIN von der SD-Karte lokal öffnen. Die Datei wird nicht hochgeladen.</p>
+        <div id="csv-drop" class="csv-drop">
+          <div class="csv-drop-row">
+            <input id="csv-file" class="visually-hidden" type="file" accept=".csv,.bin,text/csv,application/octet-stream" aria-describedby="csv-help">
+            <label for="csv-file" class="csv-picker">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v2M3 7h7M3 10h18l-3 10H3V7"/>
+              </svg>
+              CSV-/BIN-Datei auswählen
+            </label>
+            <span class="hint">oder hierher ziehen</span>
+          </div>
+          <p id="csv-help" class="hint">Bike-EKG-CSV mit timestamp_s und adc_counts (max. 256 MiB) oder abgeschlossene Bike-EKG-BIN (max. 32 MiB)</p>
+        </div>
+        <p id="csv-status" class="hint" role="status">Noch keine Datei geöffnet.</p>
+        <button id="csv-cancel" type="button" class="secondary" hidden>Einlesen abbrechen</button>
+        <details id="csv-info" hidden>
+          <summary>Datei- und Messinformationen</summary>
+          <dl id="csv-metadata" class="csv-metadata"></dl>
+        </details>
+      </section>
+      <!-- Betrachter funktioniert auch ohne BLE; sichtbare Filter ändern keine BIN/CSV. -->
+      <section id="viewer-panel" aria-labelledby="viewer-title" hidden>
+        <h2 id="viewer-title" class="visually-hidden">Bike-EKG</h2>
+        <details id="viewer-filter-panel" class="viewer-filter-panel">
+          <summary>Darstellungsfilter</summary>
+        <div class="viewer-filter-heading">
+          <h3>Bandpass &amp; Notch</h3>
+          <details class="viewer-help-bubble viewer-filter-help">
+            <summary aria-label="Implementierung der Darstellungsfilter anzeigen">i</summary>
+            <div class="viewer-help-content">
+              <p><strong>LP (Tiefpass):</strong> Butterworth-IIR 2. Ordnung, dämpft hohe Frequenzen. Die Grenzfrequenz liegt bei −3 dB.</p>
+              <p><strong>HP (Hochpass):</strong> Butterworth-IIR 2. Ordnung, dämpft Gleichanteil und langsame Baseline-Schwankungen. Grenzfrequenz bei −3 dB.</p>
+              <p><strong>Notch (Bandsperre):</strong> IIR-Biquad 2. Ordnung gegen eine schmale Störfrequenz, etwa 50 Hz Netzbrummen. Güte Q bestimmt die Breite (ungefähr f₀/Q); höheres Q bedeutet schmalere Sperre.</p>
+              <p>Berechnung über alle Messpunkte in der Reihenfolge HP → LP → Notch, mit gespeicherter bzw. geschätzter Abtastrate. Kausal, einmal vorwärts: Phasenverschiebungen und Einschwingeffekte sind möglich. An Datenlücken werden die Zustände mit konstantem Anfangswert neu initialisiert; Lücken werden nicht überbrückt. Keine medizinische Auswertung.</p>
+              <p>Nur Ansicht und PNG werden gefiltert. Originaldatei und CSV-Download bleiben unverändert. Während der SD-Übertragung sind die Filter gesperrt.</p>
+            </div>
+          </details>
+        </div>
+        <fieldset id="viewer-filters" class="viewer-filters" disabled aria-label="Darstellungsfilter konfigurieren">
+          <div class="viewer-filter-band">
+          <div><label><input id="viewer-filter-hp" type="checkbox"> HP</label> <label>Grenze (Hz) <input id="viewer-filter-hp-hz" type="number" min="0.01" step="any" value="0.5"></label></div>
+          <div><label><input id="viewer-filter-lp" type="checkbox"> LP</label> <label>Grenze (Hz) <input id="viewer-filter-lp-hz" type="number" min="0.01" step="any" value="40"></label></div>
+          <div><label><input id="viewer-filter-notch" type="checkbox"> Notch</label> <label>Mitte (Hz) <input id="viewer-filter-notch-hz" type="number" min="0.01" step="any" value="50"></label> <label>Q <input id="viewer-filter-notch-q" type="number" min="1" max="100" step="any" value="30"></label></div>
+          </div>
+          <div class="viewer-filter-qrs">
+            <div class="viewer-filter-heading">
+              <h3>QRS-Verstärkung</h3>
+              <details class="viewer-help-bubble viewer-filter-help">
+                <summary aria-label="Implementierung der QRS-Verstärkung anzeigen">i</summary>
+                <div class="viewer-help-content">
+                  <p>Nach HP → LP → Notch: feste kausale 5-Punkt-Ableitung, Quadrierung und gleitender Mittelwert über das eingestellte Zeitfenster (Standard 150 ms, auf ganze Samples gerundet).</p>
+                  <p>Ableitung: fₛ/8 · (x[n] + 2x[n−1] − 2x[n−3] − x[n−4]). Danach wird quadriert und über die letzten N Samples gemittelt. An Datenlücken werden Ableitung und Integrator zurückgesetzt; fehlende Anfangswerte der Integration zählen als null.</p>
+                  <p>Ergebnis ist eine QRS-Energiekurve in (Counts/s)², kein EKG-Rohsignal. Ableitung und Integration verursachen Verzögerung; Zeitstempel werden nicht verschoben. Keine automatische R-Zacken-Erkennung und keine vollständige Pan-Tompkins-Auswertung.</p>
+                </div>
+              </details>
+            </div>
+            <div><label><input id="viewer-filter-qrs" type="checkbox"> QRS-Verstärkung aktivieren</label> <label>Integrationsfenster (ms) <input id="viewer-filter-qrs-ms" type="number" min="1" max="1000" step="any" value="150"></label></div>
+          </div>
+          <div class="actions"><button id="viewer-filter-apply" type="button">Filter anwenden</button><button id="viewer-filter-reset" type="button" class="secondary">Rohdaten anzeigen</button></div>
+        </fieldset>
+        </details>
+        <p id="viewer-filter-status" class="hint" role="status">Aus · Rohdaten</p>
+        <div class="viewer-toolbar">
+          <div class="viewer-user-controls">
+          <div class="actions viewer-export-actions" aria-label="Plot-Export">
+            <label class="viewer-export-scale" for="viewer-export-scale">Export-Auflösung
+              <select id="viewer-export-scale">
+                <option value="1">1×</option>
+                <option value="2">2×</option>
+                <option value="4" selected>4×</option>
+              </select>
+            </label>
+            <button id="viewer-export" type="button" title="Aktuellen Plot als PNG in der gewählten Auflösung mit allen sichtbaren Messpunkten exportieren">Plot exportieren</button>
+            <label class="viewer-export-plot-only" title="Nur das Diagramm mit Achsen exportieren, ohne Titel, Messinformationen und Skalierungstext">
+              <input id="viewer-export-plot-only" type="checkbox" role="switch"> Nur Plot
+            </label>
+          </div>
+          <div class="actions" aria-label="Zeitfenster">
+            <button type="button" class="secondary" data-view-seconds="all">Gesamte Aufnahme</button>
+            <button type="button" class="secondary" data-view-seconds="5">5 s</button>
+            <button type="button" class="secondary" data-view-seconds="10">10 s</button>
+            <button type="button" class="secondary" data-view-seconds="30">30 s</button>
+          </div>
+          <p id="viewer-cursor" class="viewer-cursor">Zeiger im Plot: Zeit und Messwert</p>
+          </div>
+          <details id="viewer-help-bubble" class="viewer-help-bubble">
+            <summary aria-label="Bedienhinweise anzeigen">i</summary>
+            <div id="viewer-help" class="viewer-help-content">
+              <strong>Diagramm bedienen</strong>
+              <p>Mausrad: Zeitzoom am Zeiger · Ziehen: zeitlich verschieben.</p>
+              <p>Unteres Auswahlband: Zeitfenster verschieben oder an den Griffen begrenzen. Rechtes Auswahlband: obere und untere Y-Grenze einstellen oder den Wertebereich verschieben. Eine Änderung rechts schaltet die automatische Y-Skalierung aus.</p>
+              <p>Tastatur im Diagramm: ←/→ verschieben, +/− zoomen, Pos1 für Gesamtansicht. An den Auswahlgriffen: Pfeiltasten, mit Umschalt größere Schritte.</p>
+              <p>Touch: mit einem Finger verschieben, mit zwei Fingern zeitlich zoomen.</p>
+            </div>
+          </details>
+        </div>
+        <p id="viewer-export-status" class="hint" role="status" hidden></p>
+        <p id="viewer-description" class="visually-hidden"></p>
+        <p id="viewer-range" class="visually-hidden"></p>
+        <div class="viewer-chart-layout">
+          <canvas id="viewer-canvas" class="viewer-canvas" tabindex="0" role="img" aria-label="EKG-Rohsignal. Pfeiltasten verschieben die Zeitachse, Plus und Minus zoomen." aria-describedby="viewer-description viewer-range viewer-help"></canvas>
+          <div class="viewer-y-column">
+            <label class="viewer-y-auto-toggle" title="Y-Achse automatisch skalieren – ein/aus">
+              <input id="viewer-y-auto" class="visually-hidden" type="checkbox" aria-label="Y-Achse automatisch skalieren" checked>
+              <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true" focusable="false">
+                <path d="M7 12a10 10 0 0 1 17-3M24 4v5h-5M25 20A10 10 0 0 1 8 23M8 28v-5h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                <text x="16" y="21" text-anchor="middle" fill="currentColor" font-family="system-ui, sans-serif" font-size="14" font-weight="650">A</text>
+              </svg>
+            </label>
+            <div id="viewer-y-track" class="viewer-y-track" role="group" aria-label="Y-Wertebereich auswählen">
+              <div id="viewer-y-selection" class="viewer-y-selection">
+                <button id="viewer-y-upper" type="button" class="viewer-y-handle viewer-y-upper" role="slider" aria-orientation="vertical" aria-label="Obere Y-Grenze"></button>
+                <button id="viewer-y-move" type="button" class="viewer-y-move" aria-label="Y-Wertebereich verschieben; Pfeiltasten hoch/runter"></button>
+                <button id="viewer-y-lower" type="button" class="viewer-y-handle viewer-y-lower" role="slider" aria-orientation="vertical" aria-label="Untere Y-Grenze"></button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="viewer-overview">
+          <canvas id="viewer-overview" role="img" aria-label="Übersicht der gesamten Aufnahme"></canvas>
+          <div id="viewer-selection" class="viewer-selection">
+            <button id="viewer-selection-start" type="button" class="viewer-handle viewer-handle-start" aria-label="Anfang des Zeitfensters verschieben; Pfeiltasten zur Feineinstellung"></button>
+            <button id="viewer-selection-move" type="button" class="viewer-selection-move" aria-label="Zeitfenster verschieben; Pfeiltasten zur Feineinstellung"></button>
+            <button id="viewer-selection-end" type="button" class="viewer-handle viewer-handle-end" aria-label="Ende des Zeitfensters verschieben; Pfeiltasten zur Feineinstellung"></button>
+          </div>
+        </div>
+      </section>
+      <div id="viewer-transfer" class="viewer-transfer" hidden>
+        <progress id="viewer-transfer-progress" max="100" value="0" aria-label="SD-Aufzeichnung übertragen"></progress>
+        <p id="viewer-transfer-status" role="status"></p>
+        <button id="viewer-transfer-cancel" class="secondary" type="button">Übertragung abbrechen</button>
+        <button id="viewer-transfer-csv" type="button" hidden disabled>CSV herunterladen</button>
+        <p id="viewer-transfer-csv-status" role="status" hidden></p>
+      </div>
+    </div>
+
+    <footer>
+      <p>Webanwendung 0.1.8 · Steuerungs-JavaScript: <span id="monitor-script-version">nicht geladen</span></p>
+      <p>Laborwerkzeug · Kein medizinisches Überwachungsgerät.
+        RLD ausschließlich in elektrisch isolierten Prüfaufbauten verwenden.</p>
+    </footer>
+  </main>
+  <p id="announcement" class="visually-hidden" role="status"></p>
+</body>
+</html>

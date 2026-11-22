@@ -1,0 +1,20 @@
+# Persönliche Messdaten und lokale Entwicklungsartefakte nicht veröffentlichen.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+.pytest_cache/
+.env
+.env.*
+!.env.example
+*.log
+*.csv
+*.bin
+*.BIN
+*.png
+recordings/
+downloads/
+participants.json
+.DS_Store
+Thumbs.db
