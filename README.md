@@ -1,5 +1,11 @@
 # Bike-EKG_Web
 
+> **Zugehörige MCU-Firmware:**
+> [Bike-EKG – nRF52840-Firmware](https://github.com/Tim-Porsch/Bike-EKG-nrf52840firmware)
+>
+> Die Firmware für das Messsystem sowie Hinweise zur Hardware, zum Build und
+> zu den BLE-Schnittstellen befinden sich im separaten Firmware-Repository.
+
 Browseroberfläche zum Bike-EKG-Messsystem: Gerätesteuerung über Bluetooth,
 Live-Vorschau, SD-Aufzeichnungen herunterladen sowie CSV-/BIN-Dateien lokal
 visualisieren. Forschungsprototyp zur Bachelorarbeit von **Tim Pörschmann**,
